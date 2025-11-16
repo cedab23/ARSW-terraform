@@ -79,10 +79,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: terraform-ci
     if: github.event_name == 'workflow_dispatch'
-    environment: production # este environment debe coincidir con tu federated credential
+    environment: production # este environment debe coincidir con la federated credential
 
     permissions:
-      id-token: write # requerido para OIDC (IMPORTANTE AQUÍ)
+      id-token: write # requerido para OIDC 
       contents: read
 
     steps:
