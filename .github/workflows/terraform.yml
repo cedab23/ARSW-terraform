@@ -1,20 +1,19 @@
-name: ARSW Terraform CI
+name: Terraform CI/CD
 
 on:
   pull_request:
-    paths:
-      - "infra/**"
-      - "modules/**"
-      - ".github/workflows/terraform.yml"
-  workflow_dispatch: {}
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write # NECESARIO para OIDC
 
 jobs:
-  fmt-validate-plan:
-    name: fmt_validate_plan_pr
+  terraform-ci:
+    name: Validate & Plan
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
 
     steps:
       - name: Checkout
@@ -25,25 +24,27 @@ jobs:
         with:
           terraform_version: 1.6.0
 
-      - name: Terraform fmt check
-        working-directory: infra
-        run: terraform fmt -check
-
       - name: Terraform init
         working-directory: infra
         run: terraform init -input=false
+
+      - name: Terraform fmt (check)
+        working-directory: infra
+        run: terraform fmt -check
 
       - name: Terraform validate
         working-directory: infra
         run: terraform validate
 
-      - name: Terraform plan
+      - name: Terraform plan (save plan)
+        id: plan
         working-directory: infra
-        run: terraform plan -input=false -no-color -out=tfplan.binary -var-file="env/dev.tfvars"
+        run: |
+          terraform plan -no-color -out=tfplan
 
-      - name: Export plan to text
+      - name: Show plan to file
         working-directory: infra
-        run: terraform show -no-color tfplan.binary > plan.txt
+        run: terraform show -no-color tfplan > plan.txt
 
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
@@ -53,46 +54,46 @@ jobs:
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: actions/github-script@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            ### 📘 Terraform Plan Result
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('infra/plan.txt', 'utf8').slice(0, 64000); // acorta si es muy grande
+            const issue_number = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: "### Terraform plan\n```\n" + body + "\n```"
+            });
 
-            \`\`\`diff
-            ${{ steps.plan_output.outputs.plan_content }}
-            \`\`\`
-
-  apply:
-    name: apply
-    if: github.event_name == 'workflow_dispatch'
+  terraform-apply:
+    name: Manual Apply
     runs-on: ubuntu-latest
-    environment: development
-
+    needs: terraform-ci
+    if: github.event_name == 'workflow_dispatch' # solo manual
+    environment: production # usa el Environment que creaste (aqui se requiere aprobacion)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Azure Login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }} # App Registration ID
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.6.0
 
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
       - name: Terraform init
         working-directory: infra
         run: terraform init -input=false
 
-      - name: Terraform validate
-        working-directory: infra
-        run: terraform validate
-
       - name: Terraform apply
         working-directory: infra
-        run: terraform apply -input=false -auto-approve -var-file="env/dev.tfvars"
+        run: terraform apply -auto-approve
