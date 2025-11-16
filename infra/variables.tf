@@ -50,9 +50,7 @@ variable "subnet_mgmt_prefix" {
   type = list(string) 
 }
 
-variable "subscription_id" {
-  type = string
-}
+variable "subscription_id" {}
 
 variable "resource_group_location" {
   type        = string
