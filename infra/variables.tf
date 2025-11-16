@@ -65,3 +65,7 @@ variable "resource_group_name_prefix" {
   default     = "rg"
   description = "Prefix of the resource group name."
 }
+
+variable "client_id" {}
+
+variable "tenant_id" {}
