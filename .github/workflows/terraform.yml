@@ -103,6 +103,11 @@ jobs:
 
       - name: Terraform init (with backend)
         working-directory: infra
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_USE_OIDC: "true"
         run: terraform init -input=false
 
       - name: Download plan artifact
@@ -113,4 +118,9 @@ jobs:
 
       - name: Terraform apply
         working-directory: infra
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_USE_OIDC: "true"
         run: terraform apply -auto-approve tfplan
