@@ -11,11 +11,11 @@ terraform {
     storage_account_name = "tfstatearsw123"
     container_name       = "tfstate"
     key                  = "terraform.tfstate"
-
   }
 }
+
 provider "azurerm" {
-  use_oidc        = true
   features {}
   subscription_id = var.subscription_id
+  use_oidc        = true
 }
