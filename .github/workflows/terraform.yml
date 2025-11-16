@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write # requerido para OIDC
   contents: read
   pull-requests: write
-  id-token: write # NECESARIO para OIDC
 
 jobs:
   terraform-ci:
@@ -39,10 +39,9 @@ jobs:
       - name: Terraform plan (save plan)
         id: plan
         working-directory: infra
-        run: |
-          terraform plan -no-color -out=tfplan
+        run: terraform plan -no-color -out=tfplan
 
-      - name: Show plan to file
+      - name: Generate plan.txt
         working-directory: infra
         run: terraform show -no-color tfplan > plan.txt
 
@@ -50,7 +49,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: infra/plan.txt
+          path: infra/tfplan
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
@@ -58,21 +57,27 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const body = fs.readFileSync('infra/plan.txt', 'utf8').slice(0, 64000); // acorta si es muy grande
+            const body = fs.readFileSync('infra/plan.txt', 'utf8').slice(0, 64000);
             const issue_number = context.payload.pull_request.number;
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number,
-              body: "### Terraform plan\n```\n" + body + "\n```"
+              body: "### Terraform Plan\n```\n" + body + "\n```"
             });
 
   terraform-apply:
     name: Manual Apply
     runs-on: ubuntu-latest
     needs: terraform-ci
-    if: github.event_name == 'workflow_dispatch' # solo manual
-    environment: production # usa el Environment que creaste (aqui se requiere aprobacion)
+    if: github.event_name == 'workflow_dispatch'
+    environment: production # este environment debe coincidir con tu federated credential
+
+    permissions:
+      id-token: write # requerido para OIDC (IMPORTANTE AQUÍ)
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,20 +85,25 @@ jobs:
       - name: Azure Login using OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }} # App Registration ID
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          allow-no-subscriptions: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.6.0
 
-      - name: Terraform init
+      - name: Terraform init (with backend)
         working-directory: infra
         run: terraform init -input=false
 
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra
+
       - name: Terraform apply
         working-directory: infra
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve tfplan
